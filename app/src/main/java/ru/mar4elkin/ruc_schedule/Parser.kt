@@ -25,7 +25,7 @@ fun createPayload(city: String, year: String, group: String, search: String): Ma
         "year" to year,
         "group" to group,
         "search-date" to "search-date",
-//        "date-search" to searchDate()
+        "date-search" to search
     )
 }
 
@@ -107,4 +107,16 @@ fun getSchedule(apiUrl: String, payload: Map<String, String>): List<Day> {
         }
     }
     return schedule
+}
+
+fun getScheduleWithLecturer(apiUrl: String, payload: Map<String, String>, Lecturer: String): List<Day> {
+    val schedule = mutableListOf<Day>()
+    getSchedule(apiUrl, payload).forEach { day ->
+        day.lessons.forEach { lesson ->
+            if (Regex(Lecturer).containsMatchIn(lesson.info)) {
+                schedule.add(day)
+            }
+        }
+    }
+    return schedule;
 }
