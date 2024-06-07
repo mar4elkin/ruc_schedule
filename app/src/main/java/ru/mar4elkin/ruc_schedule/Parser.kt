@@ -5,9 +5,12 @@ import org.jsoup.nodes.Document
 import java.net.HttpURLConnection
 import java.net.URL
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
-data class Lesson(val index: String, val info: String)
-data class Day(val date: String, val day: String, val lessons: List<Lesson>)
+data class Lesson(val index: String, var info: String)
+data class Day(val date: String, val day: String, var lessons: List<Lesson>)
 
 val times = mapOf(
     "1" to "8:30 - 10:10",
@@ -106,17 +109,44 @@ fun getSchedule(apiUrl: String, payload: Map<String, String>): List<Day> {
             }
         }
     }
+    connection.disconnect();
     return schedule
 }
 
-fun getScheduleWithLecturer(apiUrl: String, payload: Map<String, String>, Lecturer: String): List<Day> {
+fun getScheduleWithLecturerFast(apiUrl: String, payload: Map<String, String>, lecturer: String): List<Day> {
     val schedule = mutableListOf<Day>()
-    getSchedule(apiUrl, payload).forEach { day ->
-        day.lessons.forEach { lesson ->
-            if (Regex(Lecturer).containsMatchIn(lesson.info)) {
-                schedule.add(day)
+    val groups = getGenericData(
+        apiUrl,
+        "group",
+        createPayload(payload["branch"].toString(), payload["year"].toString(), "", payload["date-search"].toString())
+    )
+
+    for (group in groups) {
+        val currentSchedule = getSchedule(apiUrl, createPayload(payload["branch"].toString(), payload["year"].toString(), group.second, payload["date-search"].toString()))
+
+        for (day in currentSchedule) {
+            for (lesson in day.lessons) {
+                val regex = Regex("\\b$lecturer\\b", RegexOption.IGNORE_CASE)
+                val matchResult = regex.find(lesson.info)
+
+                if (matchResult != null) {
+                    lesson.info = lesson.info.plus(" ").plus(group.first)
+                    val existingDay = schedule.find { it.date == day.date }
+                    if (existingDay != null) {
+                        existingDay.lessons += lesson
+                        existingDay.lessons = existingDay.lessons.sortedBy { it.index }
+                    } else {
+                        val newDay = Day(day.date, day.day, listOf(lesson))
+                        schedule.add(newDay)
+                    }
+
+                    Log.d("parser", "added")
+                } else {
+                    Log.d("parser", "pass")
+                }
             }
         }
     }
+    schedule.sortBy { it.date }
     return schedule;
 }

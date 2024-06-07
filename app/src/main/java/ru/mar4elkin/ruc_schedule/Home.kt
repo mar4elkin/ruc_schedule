@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.DateRange
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -23,8 +26,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +42,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -109,7 +116,7 @@ fun RenderSchedule(schedule: List<Day>) {
                     }
                     Card(
                         colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.onSurface,
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
                         ),
                         modifier = Modifier
                             .padding(all = 10.dp)
@@ -132,19 +139,87 @@ class HomeViewModel : ViewModel() {
     fun getSchedule(payload: Map<String, String>) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                schedule.postValue(listOf())
                 val result = getSchedule(APP_API_URL, payload)
-                Log.d("SettingsViewModel", result.toString())
+                Log.d("HomeViewModel->getSchedule", payload.toString())
+                Log.d("HomeViewModel->getSchedule", result.toString())
                 schedule.postValue(result)
             } catch (e: Exception) {
-                Log.d("SettingsViewModel", "some error!")
+                Log.d("HomeViewModel->getSchedule", "some error!")
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun getAllLecturesByFIO(payload: Map<String, String>, fio: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                schedule.postValue(listOf())
+                val result = getScheduleWithLecturerFast(APP_API_URL, payload, fio)
+                Log.d("HomeViewModel->getAllLecturesByFIO", result.toString())
+                schedule.postValue(result)
+            } catch (e: Exception) {
+                Log.d("HomeViewModel->getAllLecturesByFIO", "some error!")
                 e.printStackTrace()
             }
         }
     }
 }
+@Composable
+fun SearchDialog(onConfirmation: (String) -> Unit, shouldShowDialog: MutableState<Boolean>) {
+    var fiovalue by remember { mutableStateOf("") }
+    if (shouldShowDialog.value) {
+        Dialog(
+            onDismissRequest = { shouldShowDialog.value = false },
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(260.dp)
+                    .padding(16.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight()
+                        .padding(25.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Поиск преподавателя",
+                        modifier = Modifier
+                            .wrapContentSize(Alignment.Center),
+                        textAlign = TextAlign.Center,
+                    )
+                    TextField(
+                        value = fiovalue,
+                        onValueChange = {v -> fiovalue = v},
+                        colors = TextFieldDefaults.colors(
+                            //MaterialTheme.colorScheme.background
+                        ),
+                        readOnly = false,
+                        placeholder = { Text(text = "ФИО") },
+                    )
+                    Button(
+                        modifier = Modifier
+                            .padding(all = 10.dp)
+                            .height(32.3.dp),
+                        onClick = {
+                            onConfirmation(fiovalue)
+                        }) {
+                        Text(text = "Найти")
+                    }
+                }
+            }
+        }
+
+    }
+}
 
 @Composable
 fun HomeView(viewModel: HomeViewModel, navController: NavController) {
+    val shouldShowDialog = remember { mutableStateOf(false) }
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
     val formatter_render = DateTimeFormatter.ofPattern("dd.mm.yyyy")
 
@@ -153,6 +228,7 @@ fun HomeView(viewModel: HomeViewModel, navController: NavController) {
     val schedule = remember { mutableStateOf(emptyList<Day>()) }
     var loading by remember { mutableStateOf(true) }
     var selectedDate by remember { mutableStateOf(LocalDate.now().format(formatter).toString()) }
+    var findLecture by remember { mutableStateOf("") }
 
     if (
         mSettings?.getString(APP_PREFERENCES_CITY, "").isNullOrEmpty() &&
@@ -181,6 +257,21 @@ fun HomeView(viewModel: HomeViewModel, navController: NavController) {
                 schedule.value = value
             }
         }
+    }
+
+    if (shouldShowDialog.value) {
+        SearchDialog(
+            {res ->
+                val city = mSettings?.getString(APP_PREFERENCES_CITY, "")
+                val year = mSettings?.getString(APP_PREFERENCES_YEAR, "")
+
+                val payload = city?.let { year?.let { it1 -> createPayload(it, it1, "", selectedDate) } }
+                payload?.let { viewModel.getAllLecturesByFIO(it, res) }
+                shouldShowDialog.value = false;
+                loading = true
+            },
+            shouldShowDialog = shouldShowDialog
+        )
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -214,10 +305,24 @@ fun HomeView(viewModel: HomeViewModel, navController: NavController) {
                         modifier = Modifier.padding(all = 10.dp)
                     ) {
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(start = 5.dp, end = 5.dp, top = 4.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 5.dp, end = 5.dp, top = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Button(
+                                modifier = Modifier
+                                    .padding(all = 10.dp)
+                                    .height(32.3.dp),
+                                onClick = {
+                                    shouldShowDialog.value = true
+                                }) {
+                                Icon(
+                                    Icons.Rounded.Search,
+                                    contentDescription = stringResource(id = R.string.search_desc)
+                                )
+                            }
                             Button(
                                 modifier = Modifier.height(32.3.dp),
                                 onClick = {
@@ -245,13 +350,15 @@ fun HomeView(viewModel: HomeViewModel, navController: NavController) {
                                 )
                             }
                             Card(
-                                modifier = Modifier.padding(all = 10.dp).height(32.3.dp),
+                                modifier = Modifier
+                                    .padding(all = 10.dp)
+                                    .height(32.3.dp),
                                 colors = CardDefaults.cardColors(
                                     containerColor = MaterialTheme.colorScheme.inverseOnSurface,
                                 ),
                             ) {
                                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(text = "Текущая: $selectedDate", textAlign = TextAlign.Center)
+                                    Text(text = selectedDate, textAlign = TextAlign.Center)
                                 }
                             }
                         }

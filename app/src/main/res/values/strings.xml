@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">ruc_schedule</string>
     <string name="date_range_desc">date_range_desc</string>
+    <string name="search_desc">search_desc</string>
 </resources>
